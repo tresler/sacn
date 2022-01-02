@@ -77,7 +77,7 @@ class sACNsender:
             time.time()
         )
 
-    def activate_output(self, universe: int) -> None:
+    def activate_output(self, universe: int, dmxStartCodeWithChanPriority: bool = False) -> None:
         """
         Activates a universe that's then starting to sending every second.
         See http://tsp.esta.org/tsp/documents/docs/E1-31-2016.pdf for more information
@@ -88,13 +88,13 @@ class sACNsender:
         if universe in self._outputs:
             return
         # add new sending:
-        new_output = Output(DataPacket(cid=self._sender_handler._CID, sourceName=self._sender_handler._source_name, universe=universe))
+        new_output = Output(DataPacket(dmxStartCodeWithChanPriority=dmxStartCodeWithChanPriority, cid=self._sender_handler._CID, sourceName=self._sender_handler._source_name, universe=universe))
         self._outputs[universe] = new_output
 
     def deactivate_output(self, universe: int) -> None:
         """
         Deactivates an existing sending. Every data from the existing sending output will be lost.
-        (TTL, Multicast, DMX data, ..)
+        (TTL, Multicast,  data, ..)
         :param universe: the universe to deactivate. If the universe was not activated before, no error is raised
         """
         check_universe(universe)
