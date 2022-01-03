@@ -21,10 +21,18 @@ class Output:
     def dmx_data(self) -> tuple:
         return self._packet.dmxData
 
+    @property
+    def dmx_priority(self) -> tuple:
+        return self._packet.dmxPriority
+
     @dmx_data.setter
     def dmx_data(self, dmx_data: tuple):
         self._packet.dmxData = dmx_data
         self._changed = True
+
+    @dmx_priority.setter
+    def dmx_priority(self, dmx_priority: tuple):
+        self._packet.dmxPriority = dmx_priority
 
     @property
     def priority(self) -> int:

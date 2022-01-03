@@ -81,6 +81,9 @@ class SenderSocketUDP(SenderSocketBase):
     def send_multicast(self, data: RootLayer, destination: str, ttl: int) -> None:
         # make socket multicast-aware: (set TTL)
         self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+        if hasattr(data, "dmxStartCodeWithChanPriority"):  # if is not sync packet
+            if data.dmxStartCodeWithChanPriority: # is set dmx channel priority
+                self.send_packet(data.getBytesPriority(), destination) # send level priority
         self.send_packet(data.getBytes(), destination)
 
     def send_broadcast(self, data: RootLayer) -> None:
