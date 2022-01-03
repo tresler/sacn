@@ -18,8 +18,9 @@ from sacn.messages.root_layer import \
 class DataPacket(RootLayer):
     def __init__(self, cid: tuple, sourceName: str, universe: int, dmxData: tuple = (), priority: int = 100,
                  sequence: int = 0, streamTerminated: bool = False, previewData: bool = False,
-                 forceSync: bool = False, sync_universe: int = 0, dmxStartCode: int = 0x00):
-        super().__init__(126 + len(dmxData), cid, VECTOR_ROOT_E131_DATA)
+                 forceSync: bool = False, sync_universe: int = 0, dmxStartCodeWithChanPriority: bool = 0,
+                 dmxPriority: tuple = ()):
+        super().__init__(126 + len(dmxData) + len(dmxPriority), cid, VECTOR_ROOT_E131_DATA)
         self.sourceName: str = sourceName
         self.priority = priority
         self.syncAddr = sync_universe
@@ -28,7 +29,10 @@ class DataPacket(RootLayer):
         self.option_PreviewData: bool = previewData
         self.option_ForceSync: bool = forceSync
         self.sequence = sequence
-        self.dmxStartCode = dmxStartCode
+        self.dmxStartCodeWithChanPriority = dmxStartCodeWithChanPriority
+        self.dmxStartCode = 0x00
+        self.dmxStartCodePriority = 0xDD
+        self.dmxPriority = dmxPriority
         self.dmxData = dmxData
 
     def __str__(self):
@@ -117,6 +121,21 @@ class DataPacket(RootLayer):
         self._dmxStartCode = dmxStartCode
 
     @property
+    def dmxStartCodePriority(self) -> int:
+        return self._dmxStartCodePriority
+
+    @dmxStartCodePriority.setter
+    def dmxStartCodePriority(self, dmxStartCodePriority: int):
+        """
+        DMX start code values: 0x00 for level data; 0xDD for per address priority data
+        """
+        if type(dmxStartCodePriority) is not int:
+            raise TypeError(f'dmx start code must be an integer! Type was {type(dmxStartCodePriority)}')
+        if dmxStartCodePriority not in range(0, 256):
+            raise ValueError(f'dmx start code is a byte! values: [0-255]! value was {dmxStartCodePriority}')
+        self._dmxStartCodePriority = dmxStartCodePriority
+
+    @property
     def dmxData(self) -> tuple:
         return self._dmxData
 
@@ -134,7 +153,27 @@ class DataPacket(RootLayer):
             newData[i] = data[i]
         self._dmxData = tuple(newData)
         # in theory this class supports dynamic length, so the next line is correcting the length
-        self.length = 126 + len(self._dmxData)
+        self.length = 126 + len(self._dmxData) + len(self._dmxData)
+    
+    @property
+    def dmxPriority(self) -> tuple:
+        return self._dmxPriority
+        
+    @dmxPriority.setter
+    def dmxPriority(self, data: tuple):
+        """
+        For legacy devices and to prevent errors, the length of the DMX priority is normalized to 512
+        """
+        if len(data) > 512 or \
+                not all((isinstance(x, int) and (0 <= x <= 255)) for x in data):
+            raise ValueError(f'dmxPriority is a tuple with a max length of 512! The data in the tuple has to be valid bytes! '
+                             f'Length was {len(data)}')
+        newData = [0]*512
+        for i in range(0, min(len(data), 512)):
+            newData[i] = data[i]
+        self._dmxPriority = tuple(newData)
+        # in theory this class supports dynamic length, so the next line is correcting the length
+        self.length = 126 + len(self._dmxPriority)
 
     def getBytes(self) -> tuple:
         rtrnList = super().getBytes()
@@ -178,6 +217,51 @@ class DataPacket(RootLayer):
         # DMX data:-----------------------------
         rtrnList.append(self._dmxStartCode)  # DMX Start Code
         rtrnList.extend(self._dmxData)
+        return tuple(rtrnList)
+
+    def getBytesPriority(self) -> tuple:
+        rtrnList = super().getBytes()
+        # Flags and Length Framing Layer:-------
+        rtrnList.extend(make_flagsandlength(self.length - 38))
+        # Vector Framing Layer:-----------------
+        rtrnList.extend(VECTOR_E131_DATA_PACKET)
+        # sourceName:---------------------------
+        # UTF-8 encode the string
+        tmpSourceName = str(self._sourceName).encode('UTF-8')
+        rtrnList.extend(tmpSourceName)
+        # pad to 64 bytes
+        rtrnList.extend([0] * (64 - len(tmpSourceName)))
+        # priority------------------------------
+        rtrnList.append(0)
+        # syncAddress---------------------------
+        rtrnList.extend(int_to_bytes(self._syncAddr))
+        # sequence------------------------------
+        rtrnList.append(self._sequence)
+        # Options Flags:------------------------
+        tmpOptionsFlags = 0
+        # stream terminated:
+        tmpOptionsFlags += int(self.option_StreamTerminated) << 6
+        # preview data:
+        tmpOptionsFlags += int(self.option_PreviewData) << 7
+        # force synchronization
+        tmpOptionsFlags += int(self.option_ForceSync) << 5
+        rtrnList.append(tmpOptionsFlags)
+        # universe:-----------------------------
+        rtrnList.extend(int_to_bytes(self._universe))
+        # DMP Layer:---------------------------------------------------
+        # Flags and Length DMP Layer:-----------
+        rtrnList.extend(make_flagsandlength(self.length - 115))
+        # Vector DMP Layer:---------------------
+        rtrnList.append(VECTOR_DMP_SET_PROPERTY)
+        # Some static values (Address & Data Type, First Property addr, ...)
+        rtrnList.extend([0xa1, 0x00, 0x00, 0x00, 0x01])
+        # Length of the data:-------------------
+        lengthDmxData = len(self._dmxPriority)+1
+        rtrnList.extend(int_to_bytes(lengthDmxData))
+        # DMX data:-----------------------------
+        rtrnList.append(self._dmxStartCodePriority)  # DMX Start Code
+        rtrnList.extend(self._dmxPriority)
+        self._sequence += 1
         return tuple(rtrnList)
 
     @staticmethod
