@@ -87,6 +87,11 @@ Available Attributes for `sender[<universe>].<attribute>` are:
  * `preview_data: bool`: Flag to mark the data as preview data for visualization purposes. Default: False
  * `dmx_data: tuple`: the DMX data as a tuple. Max length is 512 and for legacy devices all data that is smaller than
  512 is merged to a 512 length tuple with 0 as filler value. The values in the tuple have to be [0-255]!
+ * `dmx_priority: tuple`: the priority channel a tuple. 1 for active channel, 0 for deactive channel. Max length is 512 and for legacy devices all data that is smaller than
+ 512 is merged to a 512 length tuple with 0 as filler value. The values in the tuple have to be [0-255]!
+
+For activation for channel priority use:
+ * `sender.activate_output(universe, dmxStartCodeWithChanPriority=True)
 
 `sACNsender` Creates a sender object. A sender is used to manage multiple sACN universes and handles their output.
 DMX data is send out every second, when no data changes. Some changes may be not send out, because the fps
@@ -108,28 +113,34 @@ When manually flushed, the E1.31 sync feature is used. So all universe data is s
 a sync packet is send to all receivers and then they are allowed to display the received data. Note that not all
 receiver implemented this feature of the sACN protocol.
 
-Example for the usage of the manual_flush:
-```python
-import sacn
+Example for the usage of the manual_flush with active channel priority:
+```
 import time
+import sacn
 
+unv = 1
+
+# setup sacn sender server
 sender = sacn.sACNsender()
+sender.activate_output(unv, dmxStartCodeWithChanPriority=True)
+sender[unv].priority = 1
+sender[unv].multicast = True
+sender[unv].manual_flush = True
 sender.start()
-sender.activate_output(1)
-sender.activate_output(2)
-sender[1].multicast = True # keep in mind that multicast on windows is a bit different
-sender[2].multicast = True
 
-sender.manual_flush = True # turning off the automatic sending of packets
-sender[1].dmx_data = (1, 2, 3, 4)  # some test DMX data
-sender[2].dmx_data = (5, 6, 7, 8)  # by the time we are here, the above data would be already send out,
-# if manual_flush would be False. This could cause some jitter
-# so instead we are flushing manual
-time.sleep(1) # let the sender initialize itself
-sender.flush()
-sender.manual_flush = False # keep manual flush off as long as possible, because if it is on, the automatic
-# sending of packets is turned off and that is not recommended
-sender.stop() # stop sending out
+# send dmx data and active channel
+sender[unv].dmx_priority = (1, 0, 1, 1, 1)
+sender[unv].dmx_data = (235, 128, 16, 85, 0)
+
+# sending loop
+sender_time = round(time.time())
+while True:
+    if round(time.time()) > sender_time + 0.5:
+        sender.flush()
+        sender_time = round(time.time())
+        print("FLASH")
+    else:
+        time.sleep(0.1)
 ```
 
 ### Receiving
